@@ -6,7 +6,7 @@ services:
       - STARTUP_WAIT=3
       - CHECK_INTERVAL=60
       - IDLE_LIMIT=900
-      - CHECK_CMD=ss -tn state established '( sport = :3001 )'
+      - CHECK_CMD="ss -tn state established '( sport = :3001 )' | tail -n +2 | grep -q ."
       - LOG_LEVEL=normal
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

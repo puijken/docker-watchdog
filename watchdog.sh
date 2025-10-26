@@ -10,7 +10,7 @@ LOG_LEVEL="${LOG_LEVEL:-normal}"   # Options: normal | quiet | debug
 # Require CHECK_CMD explicitly — no default fallback
 if [ -z "${CHECK_CMD:-}" ]; then
   echo "[Watchdog] ERROR: CHECK_CMD environment variable must be set (defines how to detect activity inside '$CONTAINER')."
-  echo "[Watchdog] Example: CHECK_CMD=\"ss -tn state established '( sport = :3001 )'\""
+  echo "[Watchdog] Example: CHECK_CMD="ss -tn state established '( sport = :3001 )' | tail -n +2 | grep -q .""
   exit 1
 fi
 
@@ -63,7 +63,7 @@ while true; do
 
   # === Inner monitoring loop ===
   while docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q true; do
-    if docker exec "$CONTAINER" sh -c "$CHECK_CMD" | grep -q .; then
+    if docker exec "$CONTAINER" sh -c "$CHECK_CMD"; then
       LAST_ACTIVE=$(date +%s)
       log_debug "[$CONTAINER] Activity detected — idle timer reset."
     else
