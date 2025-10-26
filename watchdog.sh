@@ -10,7 +10,8 @@ LOG_LEVEL="${LOG_LEVEL:-normal}"   # Options: normal | quiet | debug
 # Require CHECK_CMD explicitly — no default fallback
 if [ -z "${CHECK_CMD:-}" ]; then
   echo "[Watchdog] ERROR: CHECK_CMD environment variable must be set (defines how to detect activity inside '$CONTAINER')."
-  echo "[Watchdog] Example: CHECK_CMD="ss -tn state established '( sport = :3001 )' | tail -n +2 | grep -q .""
+  echo "[Watchdog] Example:"
+  echo "  CHECK_CMD="ss -tn state established | grep ':3000' | grep -q ."
   exit 1
 fi
 
