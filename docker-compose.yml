@@ -7,6 +7,7 @@ services:
       - CHECK_INTERVAL=60
       - IDLE_LIMIT=900
       - CHECK_CMD=ss -tn state established '( sport = :3001 )'
+      - LOG_LEVEL=normal
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     labels:

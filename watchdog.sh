@@ -5,6 +5,7 @@ set -eu
 CONTAINER="${TARGET_CONTAINER:?TARGET_CONTAINER must be set}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-60}"
 IDLE_LIMIT="${IDLE_LIMIT:-900}"
+LOG_LEVEL="${LOG_LEVEL:-normal}"   # Options: normal | quiet | debug
 
 # Require CHECK_CMD explicitly — no default fallback
 if [ -z "${CHECK_CMD:-}" ]; then
@@ -13,45 +14,67 @@ if [ -z "${CHECK_CMD:-}" ]; then
   exit 1
 fi
 
-echo "[Watchdog] Starting for container '$CONTAINER'"
-echo "[Watchdog] Check interval: ${CHECK_INTERVAL}s | Idle limit: ${IDLE_LIMIT}s"
-echo "[Watchdog] Using CHECK_CMD: $CHECK_CMD"
+# === Logging helper functions ===
+log() {
+  [ "$LOG_LEVEL" != "quiet" ] && echo "[Watchdog] $*"
+}
+
+log_debug() {
+  [ "$LOG_LEVEL" = "debug" ] && echo "[Watchdog][DEBUG] $*"
+}
+
+log "Starting for container '$CONTAINER'"
+log "Check interval: ${CHECK_INTERVAL}s | Idle limit: ${IDLE_LIMIT}s | Log level: ${LOG_LEVEL}"
+log "Using CHECK_CMD: $CHECK_CMD"
 
 # Graceful exit handler — stops the target container if watchdog is terminated
-trap 'echo "[Watchdog] Caught stop signal — stopping $CONTAINER"; docker stop "$CONTAINER" >/dev/null 2>&1 || true; exit 0' INT TERM
+trap 'log "Caught stop signal — stopping $CONTAINER"; docker stop "$CONTAINER" >/dev/null 2>&1 || true; exit 0' INT TERM
+
+LAST_STATE="none"
 
 # === Main persistent loop ===
 while true; do
-  # Wait for the target container to exist
+  # Check if container exists
   if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
-    echo "[Watchdog] [$CONTAINER] Container does not exist — sleeping 60s."
+    if [ "$LAST_STATE" != "missing" ]; then
+      log "[$CONTAINER] Container not found — waiting for creation..."
+      LAST_STATE="missing"
+    fi
     sleep 60
     continue
   fi
 
-  # Wait for the container to start running
+  # Check if container is running
   if ! docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q true; then
-    echo "[Watchdog] [$CONTAINER] Not running — waiting for start..."
+    if [ "$LAST_STATE" != "stopped" ]; then
+      log "[$CONTAINER] Not running — waiting for start..."
+      LAST_STATE="stopped"
+    fi
     sleep 10
     continue
   fi
 
-  echo "[Watchdog] [$CONTAINER] Running — starting activity monitoring loop."
+  if [ "$LAST_STATE" != "running" ]; then
+    log "[$CONTAINER] Running — starting activity monitoring loop."
+    LAST_STATE="running"
+  fi
+
   LAST_ACTIVE=$(date +%s)
 
   # === Inner monitoring loop ===
   while docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q true; do
     if docker exec "$CONTAINER" sh -c "$CHECK_CMD" | grep -q .; then
       LAST_ACTIVE=$(date +%s)
-      echo "[Watchdog] [$CONTAINER] Activity detected — idle timer reset."
+      log_debug "[$CONTAINER] Activity detected — idle timer reset."
     else
       NOW=$(date +%s)
       IDLE_TIME=$((NOW - LAST_ACTIVE))
-      echo "[Watchdog] [$CONTAINER] Idle for ${IDLE_TIME}s."
+      log_debug "[$CONTAINER] Idle for ${IDLE_TIME}s."
       if [ "$IDLE_TIME" -ge "$IDLE_LIMIT" ]; then
-        echo "[Watchdog] [$CONTAINER] Idle > ${IDLE_LIMIT}s — stopping container."
+        log "[$CONTAINER] Idle > ${IDLE_LIMIT}s — stopping container."
         docker stop "$CONTAINER"
-        echo "[Watchdog] [$CONTAINER] Container stopped — returning to wait state."
+        log "[$CONTAINER] Container stopped — returning to wait state."
+        LAST_STATE="stopped"
         break
       fi
     fi
@@ -59,6 +82,6 @@ while true; do
     sleep "$CHECK_INTERVAL"
   done
 
-  echo "[Watchdog] [$CONTAINER] Monitoring loop ended — rechecking in 10s."
+  log_debug "[$CONTAINER] Monitoring loop ended — rechecking in 10s."
   sleep 10
 done

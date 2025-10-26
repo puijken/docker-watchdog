@@ -46,10 +46,11 @@ All behavior is controlled via environment variables:
 | Variable | Required | Default | Description |
 |-----------|-----------|----------|--------------|
 | `TARGET_CONTAINER` | ✅ | – | Name of the Docker container to monitor (must exist). |
+| `CHECK_CMD` | ✅ | – | Command to run **inside** the target container to detect activity (e.g. active connections). Must return output when active. |
 | `STARTUP_WAIT` | ❌ | `2` | Seconds to wait after starting the target container before redirecting (allows Traefik to detect it). |
 | `CHECK_INTERVAL` | ❌ | `60` | How often (in seconds) to check for activity. |
 | `IDLE_LIMIT` | ❌ | `900` | How long (in seconds) the container can remain idle before being stopped. |
-| `CHECK_CMD` | ✅ | – | Command to run **inside** the target container to detect activity (e.g. active connections). Must return output when active. |
+| `LOG_LEVEL` | ❌ | `normal` | Configure the log level of the container - quiet, normal or debug. |
 
 ---
 
