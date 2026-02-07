@@ -1,0 +1,24 @@
+services:
+  webtop-watchdog:
+    image: ghcr.io/puijken/docker-watchdog:latest
+    environment:
+      - TARGET_CONTAINER=webtop
+      - STARTUP_WAIT=3
+      - CHECK_INTERVAL=60
+      - IDLE_LIMIT=900
+      - CHECK_CMD="ss -tn state established '( sport = :3001 )' | tail -n +2 | grep -q ."
+      - LOG_LEVEL=normal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webtop.rule=Host(`webtop.domain.local`)"
+      - "traefik.http.services.webtop.loadbalancer.server.port=5000" # Flask default port
+    restart: always
+
+  webtop:
+    image: lscr.io/linuxserver/webtop:latest
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webtop.rule=Host(`webtop.domain.local`)"
+    restart: unless-stopped
