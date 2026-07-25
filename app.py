@@ -6,10 +6,6 @@ from datetime import datetime
 import logging
 import sys
 
-CONTAINER_TO_WATCH = os.getenv("CONTAINER_TO_WATCH", "webtop")
-TARGET_URL = os.getenv("TARGET_URL", "http://redirect.to")
-STARTUP_GRACE_PERIOD = int(os.getenv("STARTUP_GRACE_PERIOD", "5"))
-
 app = Flask(__name__)
 
 # Disable Flask's default logging
@@ -20,15 +16,43 @@ log_werkzeug.setLevel(logging.ERROR)
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1, encoding='utf8')
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1, encoding='utf8')
 
-# Cache last startup time
-_container_start_time = None
-_last_check_time = None
-_startup_logged = False
-
 def log(message):
     """Log with [FLASK: timestamp] format"""
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"[FLASK: {timestamp}] {message}", flush=True)
+
+CONTAINER_TO_WATCH = os.environ.get("CONTAINER_TO_WATCH")
+TARGET_URL = os.environ.get("TARGET_URL")
+STARTUP_GRACE_PERIOD = int(os.getenv("STARTUP_GRACE_PERIOD", "5"))
+
+if not CONTAINER_TO_WATCH:
+    log("ERROR: CONTAINER_TO_WATCH environment variable is not set")
+    sys.exit(1)
+
+if not TARGET_URL:
+    log("ERROR: TARGET_URL environment variable is not set")
+    sys.exit(1)
+
+def container_exists(container_name):
+    """Check if container exists at all (running or stopped)"""
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", container_name],
+            capture_output=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, Exception):
+        return False
+
+if not container_exists(CONTAINER_TO_WATCH):
+    log(f"ERROR: Container '{CONTAINER_TO_WATCH}' does not exist")
+    sys.exit(1)
+
+# Cache last startup time
+_container_start_time = None
+_last_check_time = None
+_startup_logged = False
 
 def is_container_running(container_name):
     """Check if container is running - minimal subprocess call"""

@@ -1,4 +1,4 @@
-FROM python:3.11-alpine
+FROM python:3.14-alpine
 
 # Install dependencies
 RUN apk add --no-cache bash docker-cli iproute2
@@ -23,4 +23,4 @@ ENV PATH="/home/flask/.local/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-CMD ["sh", "-c", "python -m flask run --host=0.0.0.0 & /app/watchdog.sh & wait"]
+CMD ["sh", "-c", "python3 /app/app.py & /app/watchdog.sh & wait"]
