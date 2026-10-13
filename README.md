@@ -14,6 +14,7 @@ A dual-purpose container management tool that combines a Flask proxy with a back
 - [Security](#security)
 - [How It Works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
+- [Tests](#tests)
 
 ---
 
@@ -370,6 +371,31 @@ environment:
 environment:
   STARTUP_GRACE_PERIOD: 2  # Redirect after 2 seconds instead of 5
 ```
+
+---
+
+## 🧪 Tests
+
+`smoke_test.py IMAGE` runs the built image against a real Docker daemon through one full
+on-demand cycle, using the image itself as the target (`python3 -m http.server`):
+
+1. a request to the proxy starts the stopped target and gets a 307 to `TARGET_URL`;
+2. an open connection to the watched port keeps the target running past `TIMEOUT`;
+3. once that connection closes, the watchdog stops the target;
+4. a second request starts it again and the watchdog stops it again (the loop re-arms).
+
+It runs the watchdog the way the security section recommends: as `1000` with the socket's group
+added. It needs only Python's standard library and a Docker daemon, takes about 35 seconds, and
+removes its `dwsmoke-*` containers afterwards.
+
+```bash
+docker build -t docker-watchdog:dev .
+python3 smoke_test.py docker-watchdog:dev
+```
+
+Both workflows run it: `pr-validate.yml` on pull requests, and `build.yml` **before** pushing the
+image, so a base-image or dependency bump that breaks the start/stop cycle at runtime never reaches
+`:latest`.
 
 ---
 
