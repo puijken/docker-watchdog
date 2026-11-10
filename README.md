@@ -88,6 +88,11 @@ Watchdog Script
         └─ Idle for X seconds? → Stop container
 ```
 
+Both run under `entrypoint.sh`, which ends the container as soon as either of them exits. With a
+restart policy (`restart: always` in the examples) Docker then brings the pair back, instead of
+a proxy that still answers while nothing stops the watched container any more. It also handles
+`SIGTERM`, so `docker stop` returns in under a second.
+
 ---
 
 ## 🚀 Quick Start
@@ -308,6 +313,11 @@ user: "1000:999"  # Replace 999 with your GID
 - Connections not detected correctly (wrong PORT_TO_WATCH)
 - Application using different port than expected
 - Firewall blocking connection detection
+- The connection check cannot run: the watched image has no `ss` (or no `netstat`, if
+  `COMMAND=netstat`). The watchdog then logs `ERROR: connection check ... failed` once and
+  **keeps the container running**, because a check that cannot see connections says nothing
+  about whether there are any. Install the tool in the watched image (`iproute2` for `ss`,
+  `net-tools` for `netstat`) or switch `COMMAND` to the one it has.
 
 **Solution**:
 1. Verify port with: `docker exec CONTAINER ss -tlnp`
@@ -382,10 +392,14 @@ on-demand cycle, using the image itself as the target (`python3 -m http.server`)
 1. a request to the proxy starts the stopped target and gets a 307 to `TARGET_URL`;
 2. an open connection to the watched port keeps the target running past `TIMEOUT`;
 3. once that connection closes, the watchdog stops the target;
-4. a second request starts it again and the watchdog stops it again (the loop re-arms).
+4. a second request starts it again and the watchdog stops it again (the loop re-arms);
+5. `docker stop` on the watchdog returns promptly and exits 0 (`SIGTERM` is handled);
+6. a connection check that cannot run is not mistaken for "idle": a second target whose `PATH`
+   hides `ss` stays up past `TIMEOUT`, and the failure is logged;
+7. killing the watchdog loop, and then the proxy, each ends the container with a non-zero status.
 
 It runs the watchdog the way the security section recommends: as `1000` with the socket's group
-added. It needs only Python's standard library and a Docker daemon, takes about 35 seconds, and
+added. It needs only Python's standard library and a Docker daemon, takes about a minute, and
 removes its `dwsmoke-*` containers afterwards.
 
 ```bash

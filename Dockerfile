@@ -9,8 +9,8 @@ WORKDIR /app
 RUN addgroup -g 1000 flask && adduser -D -u 1000 -G flask flask
 
 # Copy files with correct ownership
-COPY --chown=flask:flask app.py watchdog.sh /app/
-RUN chmod +x /app/watchdog.sh
+COPY --chown=flask:flask app.py watchdog.sh entrypoint.sh /app/
+RUN chmod +x /app/watchdog.sh /app/entrypoint.sh
 
 # Switch to non-root user
 USER flask
@@ -23,4 +23,5 @@ ENV PATH="/home/flask/.local/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-CMD ["sh", "-c", "python3 /app/app.py & /app/watchdog.sh & wait"]
+# Runs the proxy and the watchdog loop, ends the container when either exits, handles SIGTERM.
+CMD ["/app/entrypoint.sh"]

@@ -68,29 +68,34 @@ container_is_running() {
     [[ "$state" == "true" ]]
 }
 
-# Check for ESTABLISHED connections on the specified port
+# Count ESTABLISHED connections on the specified port.
+#
+# Sets CONNECTION_COUNT and returns 0 when the check ran. Returns 1, with the reason in
+# CHECK_ERROR, when it could not run at all: the tool is missing in the watched container, the
+# exec was refused, the container is going down. The caller must not read that as "idle".
+#
+# Both used to be one pipeline whose only status check looked at `wc`, which always succeeds. A
+# watched image without the configured tool therefore counted as 0 connections and was stopped
+# after every TIMEOUT, mid-session, with nothing in the log. The count was also handed back as
+# the function's exit status, which wraps at 256.
+CONNECTION_COUNT=0
+CHECK_ERROR=""
 check_established_connections() {
-    local established_count=0
+    local output state
 
     case "$COMMAND" in
-        ss)
-            # ss: filter for ESTAB state and specified port
-            established_count=$(docker exec "$CONTAINER_TO_WATCH" ss -tn 2>/dev/null | \
-                grep "ESTAB" | grep ":${PORT_TO_WATCH}" | wc -l)
-            ;;
-        netstat)
-            # netstat: filter for ESTABLISHED state and specified port
-            established_count=$(docker exec "$CONTAINER_TO_WATCH" netstat -tn 2>/dev/null | \
-                grep "ESTABLISHED" | grep ":${PORT_TO_WATCH}" | wc -l)
-            ;;
+        ss)      state="ESTAB" ;;
+        netstat) state="ESTABLISHED" ;;
     esac
 
-    # Check for command execution errors
-    if [[ $? -ne 0 ]]; then
-        error_exit "Failed to execute connection check command in container"
+    if ! output=$(docker exec "$CONTAINER_TO_WATCH" "$COMMAND" -tn 2>&1); then
+        CHECK_ERROR=$(head -n 1 <<< "$output")
+        return 1
     fi
 
-    return $established_count
+    # grep -c prints 0 and exits 1 when nothing matches; that is a valid count, not an error.
+    CONNECTION_COUNT=$(grep "$state" <<< "$output" | grep -c ":${PORT_TO_WATCH}" || true)
+    return 0
 }
 
 # Wait for container to start using Docker events (minimal CPU usage)
@@ -148,8 +153,22 @@ watchdog_loop() {
         fi
 
         # Container is running, check for connections
-        check_established_connections
-        local connection_count=$?
+        if ! check_established_connections; then
+            # It stopped between the two checks: the top of the loop handles that.
+            container_is_running || continue
+
+            # Unknown is not idle. Don't let the timeout run on a check that cannot see
+            # connections; say so once and keep the container up until the check works again.
+            if [[ "$last_state" != "check_failed" ]]; then
+                log "ERROR: connection check ('$COMMAND -tn') failed in '$CONTAINER_TO_WATCH': ${CHECK_ERROR:-no output}"
+                log "ERROR: not treating that as idle. '$CONTAINER_TO_WATCH' will not be stopped until the check works (is '$COMMAND' installed in it? see COMMAND)."
+                last_state="check_failed"
+            fi
+            no_connection_start_time=0
+            sleep "$CHECK_INTERVAL"
+            continue
+        fi
+        local connection_count=$CONNECTION_COUNT
 
         if [[ $connection_count -gt 0 ]]; then
             # Active connection detected
